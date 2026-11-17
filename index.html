@@ -1408,9 +1408,16 @@ function newPlayer(){
   if(G.state!=='menu')showMenu();
   setTimeout(()=>{try{nameIn.scrollIntoView({block:'center'});nameIn.focus();}catch(e){}},60);
 }
+// Jede Runde meldet sich beim Start beim Server an – der Server misst die echte Spielzeit selbst
+let RUN={id:null,p:null};
+function startRun(){RUN={id:null,p:null};if(!onlineOn())return;
+  RUN.p=withTimeout(fetch(ONLINE.url.replace(/\/$/,'')+'/rest/v1/rpc/start_run',{method:'POST',headers:apiHeaders(),body:JSON.stringify({p_secret:deviceSecret()})}),8000)
+    .then(r=>r.ok?r.json():null).then(j=>{if(j&&j.run)RUN.id=j.run;return RUN.id;}).catch(()=>null);}
 async function submitScore(entry){
+  const run=RUN.id||(RUN.p?await RUN.p:null);RUN.id=null;RUN.p=null;
+  if(!run)return {status:'norun'};
   const r=await withTimeout(fetch(ONLINE.url.replace(/\/$/,'')+'/rest/v1/rpc/submit_score',{method:'POST',headers:apiHeaders(),
-    body:JSON.stringify({p_name:entry.name,p_secret:deviceSecret(),p_score:entry.score,p_role:entry.role,p_seconds:entry.seconds})}),8000);
+    body:JSON.stringify({p_name:entry.name,p_secret:deviceSecret(),p_score:entry.score,p_role:entry.role,p_seconds:entry.seconds,p_run:run})}),8000);
   if(!r.ok)throw new Error('HTTP '+r.status);
   return r.json();
 }
@@ -1450,6 +1457,9 @@ function resultMsg(res,entry){
     case 'new':addOwned(entry.name);return '🎉 Dein erster Eintrag in der Bestenliste!';
     case 'improved':addOwned(entry.name);return '🔥 Neuer persönlicher Rekord! (vorher '+f(res.old)+')';
     case 'kept':addOwned(entry.name);return 'Dein Rekord bleibt '+f(res.best)+' – den musst du erst knacken!';
+    case 'too_fast':return '⏳ Kurz durchatmen: Pro Gerät zählt nur ein Eintrag alle 30 Sekunden.';
+    case 'rejected':return '🤨 Dieser Score wurde vom Server abgelehnt.';
+    case 'norun':return 'Beim Rundenstart war keine Verbindung – dieser Score zählt nur lokal.';
     case 'name_taken':return '⚠️ Der Name „'+entry.name+'“ gehört schon jemand anderem. Wähle im Menü einen anderen Namen.';
     default:return 'Score konnte nicht übertragen werden.';
   }
@@ -1508,7 +1518,7 @@ function startGame(role){
     $('nameErr').textContent='⚠️ „'+nm+'“ ist schon vergeben. Bist du das auf einem anderen Gerät? Ein Name gilt nur auf dem Gerät, mit dem er zuerst benutzt wurde – bitte wähle einen anderen.';
     $('nameErr').classList.remove('hidden');nameIn.classList.remove('err');void nameIn.offsetWidth;nameIn.classList.add('err');nameIn.focus();return;}
   $('nameErr').classList.add('hidden');
-  G.name=nm.slice(0,20);rememberPlayer(G.name);
+  G.name=nm.slice(0,20);rememberPlayer(G.name);startRun();
   initAudio();
   G.role=role;R=ROLES[role];
   Object.assign(G,{state:'play',t:0,score:0,maxE:R.maxE,energy:R.maxE,hype:25,prom:R.startP,streak:0,bestStreak:0,
